@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card Forge — Character Card Builder</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="logo">
+      <span class="logo-icon">&#9876;</span>
+      <span class="logo-text">Card Forge</span>
+    </div>
+    <nav>
+      <button class="nav-btn active" data-tab="characters" onclick="switchTab('characters')">
+        <span class="nav-icon">&#9733;</span> Characters
+      </button>
+      <button class="nav-btn" data-tab="worldinfo" onclick="switchTab('worldinfo')">
+        <span class="nav-icon">&#9878;</span> World Info
+      </button>
+      <button class="nav-btn" data-tab="scenarios" onclick="switchTab('scenarios')">
+        <span class="nav-icon">&#9874;</span> Scenarios
+      </button>
+      <button class="nav-btn" data-tab="personas" onclick="switchTab('personas')">
+        <span class="nav-icon">&#9786;</span> Personas
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn btn-secondary btn-sm" onclick="importData()">Import</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportAll()">Export All</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <!-- CHARACTERS TAB -->
+    <section id="tab-characters" class="tab-content active">
+      <div class="tab-header">
+        <h2>Characters</h2>
+        <div class="tab-actions">
+          <select id="char-spec-select" class="select-sm" title="Card spec version">
+            <option value="v2">CCv2 (SillyTavern / Marinara)</option>
+            <option value="v3">CCv3 (Latest)</option>
+            <option value="nexus">HordeStudio .nexus</option>
+          </select>
+          <button class="btn btn-primary" onclick="createCharacter()">+ New Character</button>
+        </div>
+      </div>
+      <div id="character-list" class="card-list"></div>
+    </section>
+
+    <!-- WORLD INFO TAB -->
+    <section id="tab-worldinfo" class="tab-content">
+      <div class="tab-header">
+        <h2>World Info / Lorebooks</h2>
+        <div class="tab-actions">
+          <button class="btn btn-primary" onclick="createWorldInfo()">+ New World</button>
+        </div>
+      </div>
+      <div id="worldinfo-list" class="card-list"></div>
+    </section>
+
+    <!-- SCENARIOS TAB -->
+    <section id="tab-scenarios" class="tab-content">
+      <div class="tab-header">
+        <h2>Scenarios</h2>
+        <div class="tab-actions">
+          <button class="btn btn-primary" onclick="createScenario()">+ New Scenario</button>
+        </div>
+      </div>
+      <div id="scenario-list" class="card-list"></div>
+    </section>
+
+    <!-- PERSONAS TAB -->
+    <section id="tab-personas" class="tab-content">
+      <div class="tab-header">
+        <h2>Personas</h2>
+        <div class="tab-actions">
+          <button class="btn btn-primary" onclick="createPersona()">+ New Persona</button>
+        </div>
+      </div>
+      <div id="persona-list" class="card-list"></div>
+    </section>
+  </main>
+
+  <!-- CHARACTER EDITOR PANEL -->
+  <div id="editor-overlay" class="editor-overlay hidden" onclick="closeEditor(event)">
+    <div id="editor-panel" class="editor-panel" onclick="event.stopPropagation()">
+      <div class="editor-header">
+        <h3 id="editor-title">Edit Character</h3>
+        <button class="btn-close" onclick="closeEditor()">&times;</button>
+      </div>
+      <div id="editor-body" class="editor-body"></div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast hidden"></div>
+
+  <input type="file" id="import-file" accept=".json,.png,.horde_world,.nexus,.horde_human" style="display:none" onchange="handleImport(event)">
+
+  <script src="png-util.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
