@@ -6,11 +6,21 @@ Runs entirely in your browser — no install, no dependencies, no server require
 
 ## Quick Start
 
+**macOS / Linux**
+
 ```bash
 ./start.sh
 ```
 
-Opens at `http://localhost:9090`. Use `./start.sh 8080` for a custom port.
+**Windows** — double-click `start.bat`, or from a terminal:
+
+```bat
+start.bat
+```
+
+Opens at `http://localhost:9090`. Pass a port for a custom one: `./start.sh 8080` or `start.bat 8080`.
+
+On Windows nothing needs to be installed: `start.bat` uses Node's `http-server` or Python 3.7+ if available, and otherwise falls back to a small built-in PowerShell server (`serve.ps1`).
 
 You can also just open `index.html` directly in a browser.
 
