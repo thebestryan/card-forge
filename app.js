@@ -419,17 +419,11 @@ function editCharacter(id) {
       <textarea id="ed-scenario" placeholder="Current context / circumstances of the character" oninput="autoSaveCharacter()">${App.esc(scenario)}</textarea>
     </div>
 
-    <div class="section-divider">Messages</div>
+    <div class="section-divider">Dialogue and Greetings</div>
 
     <div class="field">
       <label class="field-label">First Message</label>
       <textarea id="ed-firstmes" class="large" placeholder="The character's opening greeting" oninput="autoSaveCharacter()">${App.esc(firstMes)}</textarea>
-    </div>
-
-    <div class="field">
-      <label class="field-label">Example Messages</label>
-      <textarea id="ed-mesexample" class="large mono" placeholder="Example dialogue separated by <START> tags" oninput="autoSaveCharacter()">${App.esc(mesExample)}</textarea>
-      <div class="field-hint">Format: &lt;START&gt;${App.esc('{{char}}')}: Hello! ... ${App.esc('{{user}}')}: Hi there! ...</div>
     </div>
 
     <div class="field">
@@ -441,7 +435,13 @@ function editCharacter(id) {
         </div>`).join('')}
         <button class="list-add-btn" onclick="addAltGreeting()">+ Add Alternate Greeting</button>
       </div>
-      <div class="field-hint">Additional greeting variations shown as swipes on first message.</div>
+      <div class="field-hint">Additional first messages shown as swipes on the first message.</div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Example Dialogue</label>
+      <textarea id="ed-mesexample" class="large mono" placeholder="Example dialogue separated by <START> tags" oninput="autoSaveCharacter()">${App.esc(mesExample)}</textarea>
+      <div class="field-hint">Separate multiple examples with &lt;START&gt;. Format: &lt;START&gt;${App.esc('{{char}}')}: Hello! ... ${App.esc('{{user}}')}: Hi there! ...</div>
     </div>
 
     <div class="section-divider">System & Instructions</div>

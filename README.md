@@ -39,7 +39,7 @@ Create and edit character cards with full support for all three target platforms
 
 PNG exports embed character data as base64-encoded `tEXt` chunks — the same format SillyTavern and Marinara Engine use when reading cards. CCv3 exports include both `ccv3` and `chara` chunks for backward compatibility.
 
-**Editable fields:** name, summary, description, personality, backstory, appearance (including the image-appearance override), scenario, first message, example messages, alternate greetings, system prompt, post-history instructions, depth prompt, tags, title/comment, creator, version, automatic versioning, creator notes, talkativeness, avatar.
+**Editable fields:** name, summary, description, personality, backstory, appearance (including the image-appearance override), scenario, first message, alternate greetings, example dialogue, system prompt, post-history instructions, depth prompt, tags, title/comment, creator, version, automatic versioning, creator notes, talkativeness, avatar.
 
 ### World Info / Lorebooks
 
