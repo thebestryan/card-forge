@@ -44,10 +44,19 @@ const App = (() => {
     return d.innerHTML;
   }
 
+  function attrEsc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   function nl2br(str) { return esc(str || '').replace(/\n/g, '<br>'); }
 
   return {
-    state, genId, toast, esc, save, nl2br, currentTab, editing
+    state, genId, toast, esc, attrEsc, save, nl2br, currentTab, editing
   };
 })();
 
@@ -68,12 +77,31 @@ function renderCurrentList() {
 
 // ── CHARACTERS ──────────────────────────────────────────────────────
 
+function marinaraExtensions(spec) {
+  return {
+    talkativeness: 0.5, fav: false, world: '',
+    depth_prompt: { prompt: '', depth: 4, role: 'system' },
+    backstory: '', appearance: '',
+    versioningEnabled: true,
+    cardFieldAlternatives: [],
+    useCharacterSheetAsReference: false,
+    importMetadata: {
+      card: {
+        spec: spec === 'v3' ? 'chara_card_v3' : 'chara_card_v2',
+        specVersion: spec === 'v3' ? '3.0' : '2.0'
+      },
+      embeddedLorebook: { hasEmbeddedLorebook: false }
+    }
+  };
+}
+
 function newCharData(spec) {
   const now = new Date().toISOString();
   if (spec === 'nexus') {
     return {
       _format: 'nexus-chara',
-      name: '', desc: '', prompt: '', intro: '',
+      name: '', summary: '', desc: '', backstory: '', appearance: '',
+      prompt: '', intro: '',
       authorsNote: '', creatorNotes: '', sourceUrl: '',
       tags: [], alternateGreetings: [], lorebook: [],
       tavernExtensions: { depth_prompt: { prompt: '', depth: 4, role: 'system' } },
@@ -85,14 +113,12 @@ function newCharData(spec) {
     spec: spec === 'v3' ? 'chara_card_v3' : 'chara_card_v2',
     spec_version: spec === 'v3' ? '3.0' : '2.0',
     data: {
-      name: '', description: '', personality: '', scenario: '',
+      name: '', summary: '', description: '', personality: '',
+      scenario: '',
       first_mes: '', mes_example: '', creator_notes: '',
       system_prompt: '', post_history_instructions: '',
       alternate_greetings: [], tags: [], creator: '',
-      character_version: '1.0', extensions: {
-        talkativeness: 0.7, fav: false, world: '',
-        depth_prompt: { prompt: '', depth: 4, role: 'system' }
-      }
+      character_version: '1.0', extensions: marinaraExtensions(spec)
     }
   };
   if (spec === 'v3') {
@@ -105,12 +131,120 @@ function newCharData(spec) {
   return base;
 }
 
+function normalizedExtensions(raw, spec) {
+  const defaults = marinaraExtensions(spec);
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const extensions = { ...defaults, ...source };
+  extensions.depth_prompt = {
+    ...defaults.depth_prompt,
+    ...(source.depth_prompt && typeof source.depth_prompt === 'object' ? source.depth_prompt : {})
+  };
+  const meta = source.importMetadata && typeof source.importMetadata === 'object' ? source.importMetadata : {};
+  extensions.importMetadata = {
+    ...defaults.importMetadata,
+    ...meta,
+    card: { ...defaults.importMetadata.card, ...(meta.card && typeof meta.card === 'object' ? meta.card : {}) },
+    embeddedLorebook: {
+      ...defaults.importMetadata.embeddedLorebook,
+      ...(meta.embeddedLorebook && typeof meta.embeddedLorebook === 'object' ? meta.embeddedLorebook : {})
+    }
+  };
+  extensions.backstory = typeof extensions.backstory === 'string' ? extensions.backstory : '';
+  extensions.appearance = typeof extensions.appearance === 'string' ? extensions.appearance : '';
+  extensions.versioningEnabled = extensions.versioningEnabled !== false;
+  extensions.useCharacterSheetAsReference = false;
+  extensions.cardFieldAlternatives = Array.isArray(extensions.cardFieldAlternatives)
+    ? extensions.cardFieldAlternatives
+      .filter(a => a && typeof a === 'object')
+      .map(a => ({ ...a, chatIds: [] }))
+    : [];
+  const imageAppearance = typeof extensions.imageAppearance === 'string' ? extensions.imageAppearance : '';
+  if (extensions.imageAppearanceEnabled === true) {
+    extensions.imageAppearanceEnabled = true;
+    extensions.imageAppearance = imageAppearance;
+  } else {
+    delete extensions.imageAppearanceEnabled;
+    if (imageAppearance) extensions.imageAppearance = imageAppearance;
+    else delete extensions.imageAppearance;
+  }
+  delete extensions.characterSheetImageId;
+  return extensions;
+}
+
+function normalizeCharacter(char) {
+  if (!char || !char.data) return char;
+  const spec = char._cardSpec === 'v3' ? 'v3' : 'v2';
+  const data = char.data;
+  if (typeof data.summary !== 'string') data.summary = '';
+  data.extensions = normalizedExtensions(data.extensions, spec);
+  if (!data.extensions.backstory && typeof data.backstory === 'string') {
+    data.extensions.backstory = data.backstory;
+  }
+  if (!data.extensions.appearance && typeof data.appearance === 'string') {
+    data.extensions.appearance = data.appearance;
+  }
+  if (!char._createdAt) char._createdAt = new Date().toISOString();
+  if (!char._updatedAt) char._updatedAt = char._createdAt;
+  if (typeof char._comment !== 'string') char._comment = '';
+  return char;
+}
+
+function normalizedCardData(char) {
+  const data = JSON.parse(JSON.stringify(char.data || {}));
+  return normalizeCharacter({ _cardSpec: char._cardSpec, data }).data;
+}
+
+function buildMarinaraNative(char) {
+  const data = normalizedCardData(char);
+  const native = char._marinaraNative || {};
+  const now = new Date().toISOString();
+  const spriteCatalog = native.spriteCatalog && typeof native.spriteCatalog === 'object'
+    ? native.spriteCatalog
+    : { version: 1, folders: [], sprites: {} };
+  const envelopeData = {
+    spec: 'chara_card_v2',
+    spec_version: '2.0',
+    data,
+    spriteCatalog,
+    avatar: char._avatar || null
+  };
+  if (Array.isArray(native.sprites) && native.sprites.length) envelopeData.sprites = native.sprites;
+  if (Array.isArray(native.gallery) && native.gallery.length) envelopeData.gallery = native.gallery;
+  envelopeData.metadata = {
+    createdAt: char._createdAt || now,
+    updatedAt: char._updatedAt || now,
+    comment: char._comment || ''
+  };
+  return {
+    type: 'marinara_character',
+    version: 1,
+    exportedAt: now,
+    data: envelopeData
+  };
+}
+
+function isSafeImageDataUrl(value) {
+  return typeof value === 'string' &&
+    /^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value);
+}
+
+function buildCardEnvelope(char, spec) {
+  return {
+    spec: spec === 'v3' ? 'chara_card_v3' : 'chara_card_v2',
+    spec_version: spec === 'v3' ? '3.0' : '2.0',
+    data: normalizedCardData(char)
+  };
+}
+
 function createCharacter() {
   const spec = document.getElementById('char-spec-select').value;
   const char = newCharData(spec);
   char.id = App.genId();
   char._cardSpec = spec;
   char._avatar = null;
+  char._createdAt = new Date().toISOString();
+  char._updatedAt = char._createdAt;
+  char._comment = '';
   App.state.characters.push(char);
   App.save();
   renderCharacterList();
@@ -128,7 +262,7 @@ function renderCharacterList() {
     const name = c.data?.name || c.name || 'Untitled';
     const desc = c.data?.description || c.desc || '';
     const tags = c.data?.tags || c.tags || [];
-    const specLabel = c._cardSpec === 'nexus' ? 'HordeStudio' : c._cardSpec === 'v3' ? 'CCv3' : 'CCv2';
+    const specLabel = c._cardSpec === 'nexus' ? 'HordeStudio' : c._marinaraNative ? 'Marinara' : c._cardSpec === 'v3' ? 'CCv3' : 'CCv2';
     const avatar = c._avatar;
     return `<div class="card-item" onclick="editCharacter('${c.id}')">
       <div class="card-actions">
@@ -137,7 +271,7 @@ function renderCharacterList() {
         <button class="btn btn-ghost btn-sm btn-danger" onclick="event.stopPropagation();deleteCharacter('${c.id}')" title="Delete">&#10005;</button>
       </div>
       <div class="card-item-header">
-        <div class="card-avatar">${avatar ? `<img src="${avatar}" alt="">` : App.esc(name[0] || '?')}</div>
+        <div class="card-avatar">${avatar ? `<img src="${App.attrEsc(avatar)}" alt="">` : App.esc(name[0] || '?')}</div>
         <div><div class="card-title">${App.esc(name)}</div><div class="card-meta">${specLabel}</div></div>
       </div>
       <div class="card-desc">${App.esc(desc.substring(0, 200))}</div>
@@ -162,7 +296,7 @@ function duplicateCharacter(id) {
   App.state.characters.push(dupe);
   App.save();
   renderCharacterList();
-  toast('Character duplicated');
+  App.toast('Character duplicated');
 }
 
 function exportCharacter(id) {
@@ -172,14 +306,14 @@ function exportCharacter(id) {
   if (spec === 'nexus') {
     downloadJSON(char, (char.data?.name || char.name || 'character') + '.nexus', 'nexus');
   } else {
-    const v2Data = { spec: char.spec, spec_version: char.spec_version, data: { ...char.data } };
+    const v2Data = buildCardEnvelope(char, char._cardSpec === 'v3' ? 'v3' : 'v2');
     PNGUtil.createPNGWithCharacter(v2Data).then(blob => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = (char.data?.name || 'character') + '.png';
       a.click();
       URL.revokeObjectURL(a.href);
-      toast('Exported as PNG with embedded metadata');
+      App.toast('Exported as PNG with embedded metadata');
     });
   }
 }
@@ -197,8 +331,11 @@ function editCharacter(id) {
 
   const d = char.data || char;
   const name = d.name || '';
+  const summary = d.summary || '';
   const desc = d.description || d.desc || '';
   const personality = d.personality || '';
+  const backstory = d.extensions?.backstory || d.backstory || '';
+  const appearance = d.extensions?.appearance || d.appearance || '';
   const scenario = d.scenario || '';
   const firstMes = d.first_mes || d.intro || '';
   const mesExample = d.mes_example || '';
@@ -209,7 +346,11 @@ function editCharacter(id) {
   const tags = d.tags || [];
   const creator = d.creator || '';
   const charVersion = d.character_version || '';
-  const talkativeness = d.extensions?.talkativeness ?? 0.7;
+  const comment = char._comment || char.comment || '';
+  const imageAppearanceEnabled = d.extensions?.imageAppearanceEnabled === true;
+  const imageAppearance = d.extensions?.imageAppearance || '';
+  const versioningEnabled = d.extensions?.versioningEnabled !== false;
+  const talkativeness = d.extensions?.talkativeness ?? 0.5;
   const depthPrompt = d.extensions?.depth_prompt?.prompt || d.tavernExtensions?.depth_prompt?.prompt || '';
   const depthValue = d.extensions?.depth_prompt?.depth || d.tavernExtensions?.depth_prompt?.depth || 4;
   const depthRole = d.extensions?.depth_prompt?.role || d.tavernExtensions?.depth_prompt?.role || 'system';
@@ -217,7 +358,7 @@ function editCharacter(id) {
   let html = `
     <div class="avatar-upload">
       <div class="avatar-preview" onclick="triggerAvatarUpload()">
-        ${char._avatar ? `<img src="${char._avatar}" id="avatar-img">` : '<span class="placeholder">+</span>'}
+        ${char._avatar ? `<img src="${App.attrEsc(char._avatar)}" id="avatar-img">` : '<span class="placeholder">+</span>'}
       </div>
       <div>
         <div style="font-size:13px;color:var(--text-secondary)">Click to upload avatar</div>
@@ -234,6 +375,12 @@ function editCharacter(id) {
     </div>
 
     <div class="field">
+      <label class="field-label">Summary</label>
+      <textarea id="ed-summary" placeholder="Short overview for the library and card preview" oninput="autoSaveCharacter()">${App.esc(summary)}</textarea>
+      <div class="field-hint">Marinara uses this for library previews and metadata. It is not sent to the AI.</div>
+    </div>
+
+    <div class="field">
       <label class="field-label">Description</label>
       <textarea id="ed-desc" class="large" placeholder="Detailed character description. Use {{char}} and {{user}} macros." oninput="autoSaveCharacter()">${App.esc(desc)}</textarea>
       <div class="field-hint">This is injected into every prompt. Use ${App.esc('{{char}}')} for character name and ${App.esc('{{user}}')} for user name.</div>
@@ -243,6 +390,29 @@ function editCharacter(id) {
       <label class="field-label">Personality</label>
       <textarea id="ed-personality" placeholder="Brief personality summary (e.g. cheerful, witty, aloof)" oninput="autoSaveCharacter()">${App.esc(personality)}</textarea>
     </div>
+
+    <div class="field">
+      <label class="field-label">Backstory</label>
+      <textarea id="ed-backstory" class="large" placeholder="History, origin, important relationships" oninput="autoSaveCharacter()">${App.esc(backstory)}</textarea>
+      <div class="field-hint">Marinara's Backstory block. It is sent to the AI as part of the card.</div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Appearance</label>
+      <textarea id="ed-appearance" class="large" placeholder="Looks, clothing, visual details" oninput="autoSaveCharacter()">${App.esc(appearance)}</textarea>
+      <div class="field-hint">Marinara's Appearance block. It is sent to the AI and seeds avatar image prompts.</div>
+    </div>
+
+    ${spec === 'nexus' ? '' : `
+    <div class="field">
+      <label class="field-label" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="ed-imageappearanceenabled" ${imageAppearanceEnabled ? 'checked' : ''} onchange="autoSaveCharacter()">
+        Image Appearance Override
+      </label>
+      <textarea id="ed-imageappearance" placeholder="Short image tags, such as a LoRA trigger word" oninput="autoSaveCharacter()">${App.esc(imageAppearance)}</textarea>
+      <div class="field-hint">When enabled and filled, Marinara uses this text for image prompts instead of Appearance.</div>
+    </div>
+    `}
 
     <div class="field">
       <label class="field-label">Scenario</label>
@@ -310,6 +480,12 @@ function editCharacter(id) {
     <div class="section-divider">Metadata</div>
 
     <div class="field">
+      <label class="field-label">Title / Comment</label>
+      <input type="text" id="ed-comment" value="${App.attrEsc(comment)}" placeholder="Short label, e.g. Modern AU version" oninput="autoSaveCharacter()">
+      <div class="field-hint">A short label shown under the character name in Marinara. Stored in the native export metadata.</div>
+    </div>
+
+    <div class="field">
       <label class="field-label">Tags</label>
       <input type="text" id="ed-tags" value="${App.esc(tags.join(', '))}" placeholder="Comma-separated tags" oninput="autoSaveCharacter()">
     </div>
@@ -324,6 +500,16 @@ function editCharacter(id) {
         <input type="text" id="ed-charversion" value="${App.esc(charVersion)}" placeholder="1.0" oninput="autoSaveCharacter()">
       </div>
     </div>
+
+    ${spec === 'nexus' ? '' : `
+    <div class="field">
+      <label class="field-label" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="ed-versioning" ${versioningEnabled ? 'checked' : ''} onchange="autoSaveCharacter()">
+        Automatic versioning
+      </label>
+      <div class="field-hint">Keep previous card revisions and advance the version automatically in Marinara.</div>
+    </div>
+    `}
 
     <div class="field">
       <label class="field-label">Creator Notes</label>
@@ -341,6 +527,7 @@ function editCharacter(id) {
 
     <div class="section-divider">Export</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${spec === 'nexus' ? '' : `<button class="btn btn-primary" onclick="doExportCharacter('marinara')">Export Marinara Native (.marinara.json)</button>`}
       <button class="btn btn-primary" onclick="doExportCharacter('png-v2')">Export as PNG (CCv2)</button>
       <button class="btn btn-primary" onclick="doExportCharacter('png-v3')">Export as PNG (CCv3)</button>
       <button class="btn btn-primary" onclick="doExportCharacter('json-v2')">Export as JSON (CCv2)</button>
@@ -363,11 +550,15 @@ function autoSaveCharacter() {
 
   if (spec === 'nexus') {
     char.name = val('ed-name');
+    char.summary = val('ed-summary');
     char.desc = val('ed-desc');
+    char.backstory = val('ed-backstory');
+    char.appearance = val('ed-appearance');
     char.intro = val('ed-firstmes');
-    char.prompt = [val('ed-personality'), val('ed-scenario'), val('ed-mesexample'), val('ed-systemprompt'), val('ed-posthistory')].filter(Boolean).join('\n\n');
+    char.prompt = [val('ed-personality'), val('ed-backstory'), val('ed-appearance'), val('ed-scenario'), val('ed-mesexample'), val('ed-systemprompt'), val('ed-posthistory')].filter(Boolean).join('\n\n');
     char.creatorNotes = val('ed-creatornotes');
     char.authorsNote = val('ed-depthprompt');
+    char.comment = val('ed-comment');
     char.tags = val('ed-tags').split(',').map(s => s.trim()).filter(Boolean);
     char.tavernExtensions.depth_prompt = {
       prompt: val('ed-depthprompt'),
@@ -375,6 +566,8 @@ function autoSaveCharacter() {
       role: val('ed-depthrole')
     };
   } else {
+    char.data.extensions = char.data.extensions || {};
+    char.data.summary = val('ed-summary');
     char.data.name = val('ed-name');
     char.data.description = val('ed-desc');
     char.data.personality = val('ed-personality');
@@ -387,7 +580,14 @@ function autoSaveCharacter() {
     char.data.creator = val('ed-creator');
     char.data.character_version = val('ed-charversion');
     char.data.tags = val('ed-tags').split(',').map(s => s.trim()).filter(Boolean);
-    char.data.extensions.talkativeness = parseFloat(val('ed-talkativeness')) || 0.7;
+    char.data.extensions.backstory = val('ed-backstory');
+    char.data.extensions.appearance = val('ed-appearance');
+    char.data.extensions.imageAppearanceEnabled = document.getElementById('ed-imageappearanceenabled')?.checked === true;
+    char.data.extensions.imageAppearance = val('ed-imageappearance');
+    char.data.extensions.versioningEnabled = document.getElementById('ed-versioning')?.checked !== false;
+    if (Object.hasOwn(char.data, 'backstory')) char.data.backstory = val('ed-backstory');
+    if (Object.hasOwn(char.data, 'appearance')) char.data.appearance = val('ed-appearance');
+    char.data.extensions.talkativeness = parseFloat(val('ed-talkativeness')) || 0.5;
     char.data.extensions.depth_prompt = {
       prompt: val('ed-depthprompt'),
       depth: parseInt(val('ed-depthvalue')) || 4,
@@ -397,6 +597,8 @@ function autoSaveCharacter() {
       char.data.modification_date = Math.floor(Date.now() / 1000);
     }
   }
+  char._comment = val('ed-comment');
+  char._updatedAt = new Date().toISOString();
   App.save();
   renderCharacterList();
 }
@@ -439,7 +641,11 @@ function handleAvatarUpload(event) {
   const reader = new FileReader();
   reader.onload = () => {
     const char = App.state.characters.find(c => c.id === App.editing?.id);
-    if (char) { char._avatar = reader.result; App.save(); }
+    if (char) {
+      char._avatar = reader.result;
+      char._updatedAt = new Date().toISOString();
+      App.save();
+    }
     const img = document.getElementById('avatar-img');
     if (img) img.src = reader.result;
     else {
@@ -460,11 +666,13 @@ function doExportCharacter(format) {
     return;
   }
 
-  const v2Data = {
-    spec: format.includes('v3') ? 'chara_card_v3' : 'chara_card_v2',
-    spec_version: format.includes('v3') ? '3.0' : '2.0',
-    data: { ...char.data }
-  };
+  if (format === 'marinara') {
+    downloadJSON(buildMarinaraNative(char), name + '.marinara.json', 'character');
+    App.toast('Exported as Marinara native JSON');
+    return;
+  }
+
+  const v2Data = buildCardEnvelope(char, format.includes('v3') ? 'v3' : 'v2');
 
   if (format.startsWith('json')) {
     const blob = new Blob([JSON.stringify(v2Data, null, 2)], { type: 'application/json' });
@@ -473,16 +681,15 @@ function doExportCharacter(format) {
     a.download = name + (format.includes('v3') ? '_v3.json' : '_v2.json');
     a.click();
     URL.revokeObjectURL(a.href);
-    toast('Exported as JSON');
+    App.toast('Exported as JSON');
   } else if (format.startsWith('png')) {
-    PNGUtil.writeCharacterToPNG(new ArrayBuffer(0), v2Data);
     PNGUtil.createPNGWithCharacter(v2Data).then(blob => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = name + '.png';
       a.click();
       URL.revokeObjectURL(a.href);
-      toast('Exported as PNG with embedded metadata');
+      App.toast('Exported as PNG with embedded metadata');
     });
   }
 }
@@ -580,7 +787,7 @@ function duplicateWorld(id) {
   App.state.worldInfos.push(dupe);
   App.save();
   renderWorldInfoList();
-  toast('World duplicated');
+  App.toast('World duplicated');
 }
 
 function exportWorld(id) {
@@ -733,7 +940,7 @@ function doExportWorld(format) {
   } else {
     downloadJSON(world, name + '_world.json', 'world');
   }
-  toast('World exported');
+  App.toast('World exported');
 }
 
 // ── SCENARIOS ───────────────────────────────────────────────────────
@@ -801,14 +1008,14 @@ function duplicateScenario(id) {
   App.state.scenarios.push(dupe);
   App.save();
   renderScenarioList();
-  toast('Scenario duplicated');
+  App.toast('Scenario duplicated');
 }
 
 function exportScenario(id) {
   const sc = App.state.scenarios.find(s => s.id === id);
   if (!sc) return;
   downloadJSON(sc, (sc.name || 'scenario') + '.json', 'scenario');
-  toast('Scenario exported');
+  App.toast('Scenario exported');
 }
 
 function editScenario(id) {
@@ -927,7 +1134,7 @@ function doExportScenario() {
   const sc = App.state.scenarios.find(s => s.id === App.editing?.id);
   if (!sc) return;
   downloadJSON(sc, (sc.name || 'scenario').replace(/[^a-zA-Z0-9_-]/g, '_') + '.json', 'scenario');
-  toast('Scenario exported');
+  App.toast('Scenario exported');
 }
 
 // ── PERSONAS ────────────────────────────────────────────────────────
@@ -988,14 +1195,14 @@ function duplicatePersona(id) {
   App.state.personas.push(dupe);
   App.save();
   renderPersonaList();
-  toast('Persona duplicated');
+  App.toast('Persona duplicated');
 }
 
 function exportPersona(id) {
   const p = App.state.personas.find(p => p.id === id);
   if (!p) return;
   downloadJSON(p, (p.name || 'persona').replace(/[^a-zA-Z0-9_-]/g, '_') + '_persona.json', 'persona');
-  toast('Persona exported');
+  App.toast('Persona exported');
 }
 
 function editPersona(id) {
@@ -1104,7 +1311,7 @@ function doExportPersona(format) {
   } else {
     downloadJSON(p, name + '_persona.json', 'persona');
   }
-  toast('Persona exported');
+  App.toast('Persona exported');
 }
 
 // ── IMPORT / EXPORT ALL ─────────────────────────────────────────────
@@ -1132,9 +1339,9 @@ function handleImport(event) {
       try {
         const data = PNGUtil.readCharacterFromPNG(reader.result);
         importCharacterData(data);
-        toast('Character imported from PNG');
+        App.toast('Character imported from PNG');
       } catch (e) {
-        toast('Error: ' + e.message);
+        App.toast('Error: ' + e.message);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -1144,24 +1351,27 @@ function handleImport(event) {
         const data = JSON.parse(reader.result);
         if (data._format === 'horde-world') {
           importHordeWorld(data);
-          toast('HordeStudio world imported');
+          App.toast('HordeStudio world imported');
         } else if (data._format === 'nexus-chara' || data._format === 'horde-studio-character') {
           importNexusCharacter(data);
-          toast('HordeStudio character imported');
+          App.toast('HordeStudio character imported');
+        } else if (data.type === 'marinara_character' && data.data?.data) {
+          importMarinaraCharacter(data);
+          App.toast('Marinara character imported');
         } else if (data.spec === 'chara_card_v2' || data.spec === 'chara_card_v3') {
           importCharacterData(data);
-          toast('Character card imported');
+          App.toast('Character card imported');
         } else if (data.entries && data.name) {
           importWorldData(data);
-          toast('World info imported');
+          App.toast('World info imported');
         } else if (data.name && (data.pronouns !== undefined || data.appearance !== undefined)) {
           importPersonaData(data);
-          toast('Persona imported');
+          App.toast('Persona imported');
         } else {
-          toast('Unrecognized format');
+          App.toast('Unrecognized format');
         }
       } catch (e) {
-        toast('Error parsing file: ' + e.message);
+        App.toast('Error parsing file: ' + e.message);
       }
     };
     reader.readAsText(file);
@@ -1174,6 +1384,38 @@ function importCharacterData(data) {
   char.id = App.genId();
   char._cardSpec = data.spec === 'chara_card_v3' ? 'v3' : 'v2';
   char._avatar = null;
+  char._createdAt = new Date().toISOString();
+  char._updatedAt = char._createdAt;
+  char._comment = '';
+  normalizeCharacter(char);
+  App.state.characters.push(char);
+  App.save();
+  renderCharacterList();
+}
+
+function importMarinaraCharacter(payload) {
+  const wrapper = payload && payload.data && typeof payload.data === 'object' ? payload.data : null;
+  const card = wrapper?.data;
+  if (!card || typeof card !== 'object') throw new Error('Invalid Marinara character export');
+  const now = new Date().toISOString();
+  const metadata = wrapper.metadata && typeof wrapper.metadata === 'object' ? wrapper.metadata : {};
+  const char = {
+    id: App.genId(),
+    spec: wrapper.spec || 'chara_card_v2',
+    spec_version: wrapper.spec_version || '2.0',
+    data: JSON.parse(JSON.stringify(card)),
+    _cardSpec: wrapper.spec === 'chara_card_v3' ? 'v3' : 'v2',
+    _avatar: isSafeImageDataUrl(wrapper.avatar) ? wrapper.avatar : null,
+    _comment: typeof metadata.comment === 'string' ? metadata.comment : '',
+    _createdAt: typeof metadata.createdAt === 'string' ? metadata.createdAt : now,
+    _updatedAt: typeof metadata.updatedAt === 'string' ? metadata.updatedAt : (typeof metadata.createdAt === 'string' ? metadata.createdAt : now),
+    _marinaraNative: {
+      spriteCatalog: wrapper.spriteCatalog,
+      sprites: Array.isArray(wrapper.sprites) ? wrapper.sprites : [],
+      gallery: Array.isArray(wrapper.gallery) ? wrapper.gallery : []
+    }
+  };
+  normalizeCharacter(char);
   App.state.characters.push(char);
   App.save();
   renderCharacterList();
@@ -1186,11 +1428,15 @@ function importNexusCharacter(data) {
     _format: 'nexus-chara',
     _avatar: null,
     name: data.name || '',
+    summary: data.summary || '',
     desc: data.desc || '',
+    backstory: data.backstory || '',
+    appearance: data.appearance || '',
     prompt: data.prompt || '',
     intro: data.intro || '',
     authorsNote: data.authorsNote || '',
     creatorNotes: data.creatorNotes || '',
+    comment: data.comment || '',
     sourceUrl: data.sourceUrl || '',
     tags: data.tags || [],
     alternateGreetings: data.alternateGreetings || [],
@@ -1263,7 +1509,7 @@ function exportAll() {
     personas: App.state.personas
   };
   downloadJSON(backup, 'cardforge_backup_' + new Date().toISOString().slice(0, 10) + '.json', 'backup');
-  toast('Full backup exported');
+  App.toast('Full backup exported');
 }
 
 // ── EDITOR ──────────────────────────────────────────────────────────

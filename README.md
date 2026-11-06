@@ -34,11 +34,12 @@ Create and edit character cards with full support for all three target platforms
 |---|---|---|
 | **CCv2** (SillyTavern / Marinara) | PNG with `chara` metadata, JSON | PNG, JSON |
 | **CCv3** (latest spec) | PNG with `ccv3` metadata, JSON | PNG, JSON |
+| **Marinara Native** | `.marinara.json` (metadata, avatar, sprites, gallery) | `.marinara.json` |
 | **HordeStudio `.nexus`** | JSON | JSON |
 
 PNG exports embed character data as base64-encoded `tEXt` chunks — the same format SillyTavern and Marinara Engine use when reading cards. CCv3 exports include both `ccv3` and `chara` chunks for backward compatibility.
 
-**Editable fields:** name, description, personality, scenario, first message, example messages, alternate greetings, system prompt, post-history instructions, depth prompt, tags, creator, version, creator notes, talkativeness, avatar.
+**Editable fields:** name, summary, description, personality, backstory, appearance (including the image-appearance override), scenario, first message, example messages, alternate greetings, system prompt, post-history instructions, depth prompt, tags, title/comment, creator, version, automatic versioning, creator notes, talkativeness, avatar.
 
 ### World Info / Lorebooks
 
@@ -64,7 +65,7 @@ Create user personas with name, age, pronouns, appearance, public identity, repu
 Drag-and-drop or file picker import for:
 
 - `.png` — SillyTavern character cards (CCv2/CCv3)
-- `.json` — Character cards, world info, personas
+- `.json` — Character cards (including Marinara native `.marinara.json`), world info, personas
 - `.nexus` — HordeStudio characters
 - `.horde_world` — HordeStudio worlds
 
@@ -76,7 +77,7 @@ Export all characters, worlds, scenarios, and personas as a single backup JSON. 
 
 **SillyTavern** — CCv2 and CCv3 PNG cards import/export directly. World info is fully compatible.
 
-**Marinara Engine** — Uses the same `chara_card_v2` spec as SillyTavern. All exports work directly.
+**Marinara Engine** — CCv2 cards use the same `chara_card_v2` spec as SillyTavern, now including Marinara's Summary, Backstory, Appearance, image-appearance override, automatic versioning, and card-field alternatives extension fields. Native `.marinara.json` exports include the Marinara envelope, metadata, avatar, sprite catalog, sprites, and gallery data for full round-trips.
 
 **HordeStudio** — Native `.nexus` character format and `.horde_world` world format. SillyTavern PNG cards also import cleanly.
 
